@@ -54,3 +54,12 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+
+
+//cd governor-starter
+//cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
+//npx hardhat clean
+//npx hardhat compile
+//npx hardhat run scripts/deploy.js --network localhost
+

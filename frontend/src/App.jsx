@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Shield, LayoutDashboard, UserPlus, Vote, Send, Activity } from 'lucide-react';
 
@@ -8,7 +8,7 @@ import CreateProposal from './pages/CreateProposal';
 import CastVote from './pages/CastVote';
 import Results from './pages/Results';
 
-const Navigation = ({ address, provider }) => {
+const Navigation = ({ address, setAddress, setProvider, onConnect }) => {
   const location = useLocation();
   const currentPath = location.pathname;
 
@@ -37,7 +37,10 @@ const Navigation = ({ address, provider }) => {
         </Link>
       </div>
 
-      <WalletConnect onConnect={(addr, prov) => {}} />
+      <WalletConnect 
+        address={address}
+        onConnect={onConnect} 
+      />
     </nav>
   );
 };
@@ -82,31 +85,97 @@ function App() {
   const [address, setAddress] = useState('');
   const [provider, setProvider] = useState(null);
 
-  // Re-check connection at root level to share across routes if needed
+  // Centralized connection check and listeners
   useEffect(() => {
+    const ethereum = window.ethereum;
+    if (!ethereum) return;
+
+    // Resolve the best provider (Targeting MetaMask in multi-wallet envs)
+    const providerObj = ethereum.providers ? 
+      (ethereum.providers.find(p => p.isMetaMask) || ethereum.providers[0]) : 
+      ethereum;
+
     const checkConnection = async () => {
-      if (window.ethereum) {
-        try {
-          const prov = new ethers.BrowserProvider(window.ethereum);
-          const accounts = await prov.listAccounts();
-          if (accounts.length > 0) {
-            setAddress(accounts[0].address);
-            setProvider(prov);
-          }
-        } catch (error) {
-          console.error("Failed root connection check:", error);
+      try {
+        const accounts = await providerObj.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          setAddress(accounts[0]);
+          setProvider(new ethers.BrowserProvider(providerObj));
         }
+      } catch (error) {
+        console.error("Failed initial connection check:", error);
       }
     };
+
+    const handleAccounts = (accounts) => {
+      if (accounts.length > 0) {
+        setAddress(accounts[0]);
+        setProvider(new ethers.BrowserProvider(providerObj));
+      } else {
+        setAddress('');
+        setProvider(null);
+      }
+    };
+
+    const handleChain = () => window.location.reload();
+
     checkConnection();
+    providerObj.on('accountsChanged', handleAccounts);
+    providerObj.on('chainChanged', handleChain);
+
+    return () => {
+      providerObj.removeListener('accountsChanged', handleAccounts);
+      providerObj.removeListener('chainChanged', handleChain);
+    };
+  }, []);
+
+  const switchNetwork = async () => {
+    const HARDHAT_CHAIN_ID = '0x7a69';
+    try {
+      const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (currentChainId !== HARDHAT_CHAIN_ID) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: HARDHAT_CHAIN_ID }],
+          });
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: HARDHAT_CHAIN_ID,
+                chainName: 'Hardhat Localhost',
+                rpcUrls: ['http://127.0.0.1:8545'],
+                nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              }],
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Switch network failed:", error);
+    }
+  };
+
+  const handleConnect = useCallback(async (addr) => {
+    setAddress(addr);
+    const prov = new ethers.BrowserProvider(window.ethereum);
+    setProvider(prov);
+    // After connection, attempt to switch network if needed
+    // This happens asynchronously and won't block the UI update
+    switchNetwork();
   }, []);
 
   return (
     <Router>
       <div className="app-container">
-        {/* We pass a no-op to the navbar WalletConnect for visual state, 
-            while managing the actual provider at the App level to pass to pages */}
-        <Navigation />
+        <Navigation 
+          address={address} 
+          setAddress={setAddress} 
+          setProvider={setProvider} 
+          onConnect={handleConnect}
+        />
         
         <main style={{ paddingBottom: '80px' }}>
           <Routes>

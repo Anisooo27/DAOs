@@ -272,3 +272,30 @@ Provides:
 ## Purpose
 
 This project demonstrates the design of a secure, scalable, and realistic DAO governance system suitable for blockchain engineering portfolios and technical evaluations.
+
+
+
+
+## Terminal 1 — Hardhat Node
+//cd governor-starter
+//cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
+npx hardhat node
+
+## Terminal 2 — Hardhat Deployment
+//cd governor-starter
+//cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
+//npx hardhat clean
+//npx hardhat compile
+//npx hardhat run scripts/deploy.js --network localhost
+
+## Terminal 3 — Backend (Server)
+//cd governor-starter
+//cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
+//cd backend
+//node server.js
+
+## Terminal 4 — Frontend
+//cd governor-starter
+//cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
+//cd frontend
+//npm run dev

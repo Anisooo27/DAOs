@@ -1,50 +1,65 @@
-import { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
+import { useState } from 'react';
 import { Wallet } from 'lucide-react';
 
-const WalletConnect = ({ onConnect }) => {
-  const [address, setAddress] = useState('');
+const WalletConnect = ({ address, onConnect }) => {
   const [isConnecting, setIsConnecting] = useState(false);
 
-  // Check if wallet is already connected on load
-  useEffect(() => {
-    const checkConnection = async () => {
-      if (window.ethereum) {
-        try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const accounts = await provider.listAccounts();
-          if (accounts.length > 0) {
-            const currentAddress = accounts[0].address;
-            setAddress(currentAddress);
-            if (onConnect) onConnect(currentAddress, provider);
-          }
-        } catch (error) {
-          console.error("Failed to check wallet connection:", error);
-        }
-      }
-    };
-    checkConnection();
-  }, [onConnect]);
+  const getProvider = () => {
+    if (!window.ethereum) return null;
+    // Handle multiple providers (e.g. MetaMask + Phantom)
+    if (window.ethereum.providers) {
+      return window.ethereum.providers.find(p => p.isMetaMask) || window.ethereum.providers[0];
+    }
+    return window.ethereum;
+  };
 
   const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert("Please install MetaMask to use this feature.");
+    console.log("[WalletConnect] Clicked 'Connect Wallet'");
+    const provider = getProvider();
+    
+    if (!provider) {
+      console.warn("[WalletConnect] No ethereum provider found");
+      alert("Error: MetaMask not found. Please install the MetaMask extension and refresh the page.");
       return;
     }
 
     try {
       setIsConnecting(true);
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = await provider.getSigner();
-      const currentAddress = await signer.getAddress();
+      console.log("[WalletConnect] Requesting accounts (with 5s timeout)...");
       
-      setAddress(currentAddress);
-      if (onConnect) onConnect(currentAddress, provider);
+      // TIMEOUT MECHANISM: 5 seconds
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("TIMEOUT")), 5000)
+      );
+
+      // THE REQUEST
+      const requestPromise = provider.request({ method: 'eth_requestAccounts' });
+
+      // RACE
+      const accounts = await Promise.race([requestPromise, timeoutPromise]);
+
+      console.log("[WalletConnect] Request resolved:", accounts);
+      
+      if (accounts && accounts.length > 0) {
+        if (onConnect) {
+          onConnect(accounts[0]);
+        }
+      }
     } catch (error) {
-      console.error("Error connecting wallet:", error);
+      console.error("[WalletConnect] Error:", error);
+      
+      if (error.message === "TIMEOUT") {
+        alert("Connection Stuck: MetaMask didn't respond in time. This often happens if an extension like Zotero is conflicting or if a request is already hidden in MetaMask. Please open MetaMask manually and refresh.");
+      } else if (error.code === 4001) {
+        console.log("[WalletConnect] User rejected");
+      } else if (error.code === -32002) {
+        alert("Action Required: A request is already pending. Please open your MetaMask extension (top right icon) to approve it.");
+      } else {
+        alert(`MetaMask Error: ${error.message || "Request failed"}`);
+      }
     } finally {
       setIsConnecting(false);
+      console.log("[WalletConnect] Done");
     }
   };
 
@@ -55,6 +70,7 @@ const WalletConnect = ({ onConnect }) => {
   return (
     <button 
       className={`btn ${address ? 'btn-primary' : ''}`}
+      id="connect-wallet-btn"
       onClick={connectWallet}
       disabled={isConnecting}
     >

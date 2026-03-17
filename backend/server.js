@@ -47,7 +47,7 @@ app.post('/vote', async (req, res) => {
     // Convert choice to Number if it comes as a string
     const numericChoice = Number(choice);
     if (isNaN(numericChoice)) {
-       return res.status(400).json({ error: 'Choice must be a number' });
+      return res.status(400).json({ error: 'Choice must be a number' });
     }
 
     // In a production environment with a live frontend, we would verify the signature here:
@@ -146,7 +146,7 @@ app.post('/submit/:proposalId', async (req, res) => {
 
     // --- Step 3: Connect to the DAOGovernor contract via ethers.js ---
     const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet   = new ethers.Wallet(PRIVATE_KEY, provider);
+    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
     const contract = new ethers.Contract(GOVERNOR_ADDRESS, GOVERNOR_ABI, wallet);
 
     console.log(`[on-chain] Relayer wallet: ${wallet.address}`);
@@ -190,3 +190,9 @@ if (require.main === module) {
     })
     .catch(err => console.error('MongoDB connection error:', err));
 }
+
+
+//cd governor-starter
+//cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
+//cd backend
+//node server.js

@@ -6,8 +6,13 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 50
+        runs: 200   // lower runs = smaller bytecode size
       }
+    }
+  },
+  networks: {
+    localhost: {
+      url: "http://127.0.0.1:8545"
     }
   }
 };
