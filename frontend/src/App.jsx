@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Shield, LayoutDashboard, UserPlus, Vote, Send, Activity } from 'lucide-react';
+import { ethers } from 'ethers';
 
 import WalletConnect from './components/WalletConnect';
 import Delegate from './pages/Delegate';
@@ -183,7 +184,7 @@ function App() {
             <Route path="/delegate" element={<Delegate provider={provider} address={address} />} />
             <Route path="/create-proposal" element={<CreateProposal provider={provider} address={address} />} />
             <Route path="/cast-vote" element={<CastVote provider={provider} address={address} />} />
-            <Route path="/results" element={<Results />} />
+            <Route path="/results" element={<Results provider={provider} address={address} />} />
           </Routes>
         </main>
       </div>

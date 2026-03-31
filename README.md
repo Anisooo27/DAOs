@@ -279,7 +279,7 @@ This project demonstrates the design of a secure, scalable, and realistic DAO go
 ## Terminal 1 — Hardhat Node
 //cd governor-starter
 //cd design-and-Implement-a-DAO-Governance-Smart-Contract-System-with-Off-Chain-Voting-Integration
-npx hardhat node
+//npx hardhat node
 
 ## Terminal 2 — Hardhat Deployment
 //cd governor-starter

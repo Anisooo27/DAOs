@@ -15,21 +15,35 @@ const Delegate = ({ provider, address }) => {
 
     try {
       setIsDelegating(true);
-      // In a full implementation, this interacts with ERC20Votes contract
-      // const signer = await provider.getSigner();
-      // const tokenContract = new ethers.Contract(TOKEN_ADDRESS, ERC20VotesABI, signer);
-      // const tx = await tokenContract.delegate(delegatee);
-      // await tx.wait();
-
-      // Simulated Delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (!provider) throw new Error("Wallet provider not found");
+      const signer = await provider.getSigner();
       
-      const mockHash = `0x${Math.random().toString(16).slice(2, 66).padEnd(64, '0')}`;
-      setTxHash(mockHash);
+      const message = `Delegate votes to ${delegatee}`;
+      const signature = await signer.signMessage(message);
+
+      const response = await fetch('http://localhost:5000/delegate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          delegatorAddress: address,
+          delegateeAddress: delegatee,
+          signature
+        })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save delegation to backend');
+      }
+
+      setTxHash(signature); // Display the signature as proof
       setDelegatee('');
     } catch (error) {
       console.error("Error delegating votes:", error);
-      alert("Failed to delegate votes");
+      alert(error.message || "Failed to delegate votes");
     } finally {
       setIsDelegating(false);
     }

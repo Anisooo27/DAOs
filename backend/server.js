@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const { ethers } = require('ethers');
 const Vote = require('./models/Vote');
+const Delegation = require('./models/Delegation');
+const Proposal = require('./models/Proposal');
 const {
   GOVERNOR_ABI,
   GOVERNOR_ADDRESS,
@@ -31,6 +33,103 @@ app.get('/health', (req, res) => {
 // Tests manage their own connection via mongodb-memory-server
 
 // --- Endpoints ---
+
+// GET /config/contract
+app.get('/config/contract', (req, res) => {
+  res.json({ governorAddress: GOVERNOR_ADDRESS });
+});
+
+// 0. POST /delegate
+// Collect delegations off-chain
+app.post('/delegate', async (req, res) => {
+  try {
+    const { delegatorAddress, delegateeAddress, signature } = req.body;
+
+    // Validate required fields
+    if (!delegatorAddress || !delegateeAddress || !signature) {
+      return res.status(400).json({ error: 'Missing required fields: delegatorAddress, delegateeAddress, signature' });
+    }
+
+    // Verify signature
+    const message = `Delegate votes to ${delegateeAddress}`;
+    let signerAddress;
+    try {
+      signerAddress = ethers.verifyMessage(message, signature);
+    } catch (verificationError) {
+      console.error('Signature verification error:', verificationError);
+      return res.status(400).json({ error: `Signature verification failed: ${verificationError.message || 'Unknown error'}` });
+    }
+
+    if (signerAddress.toLowerCase() !== delegatorAddress.toLowerCase()) {
+      console.error(`Invalid signature: expected ${delegatorAddress.toLowerCase()}, got ${signerAddress.toLowerCase()}`);
+      return res.status(401).json({ error: 'Invalid signature: signer does not match delegator' });
+    }
+
+    const newDelegation = new Delegation({
+      delegatorAddress: delegatorAddress.toLowerCase(),
+      delegateeAddress: delegateeAddress.toLowerCase(),
+      signature
+    });
+
+    await newDelegation.save();
+    return res.status(201).json({ message: 'Delegation recorded successfully', delegation: newDelegation });
+
+  } catch (error) {
+    console.error('Error saving delegation:', error);
+    return res.status(500).json({ error: `Internal server error while recording delegation: ${error.message || 'Unknown error'}` });
+  }
+});
+
+// 0.5 POST /propose
+// Create a new off-chain proposal
+app.post('/propose', async (req, res) => {
+  try {
+    const { proposalId, proposerAddress, description, target, value, calldata, signature } = req.body;
+
+    if (!proposalId || !proposerAddress || !description || !target || value === undefined || !calldata || !signature) {
+      return res.status(400).json({ error: 'Missing required fields for proposal' });
+    }
+
+    const message = JSON.stringify({
+      proposalDescription: description,
+      targetContract: target,
+      value: value.toString(),
+      calldata: calldata
+    });
+
+    let signerAddress;
+    try {
+      signerAddress = ethers.verifyMessage(message, signature);
+    } catch (err) {
+      console.error('Proposal signature verification error:', err);
+      return res.status(400).json({ error: `Signature verification failed: ${err.message || 'Unknown error'}` });
+    }
+
+    if (signerAddress.toLowerCase() !== proposerAddress.toLowerCase()) {
+      console.error(`Invalid signature: expected ${proposerAddress.toLowerCase()}, got ${signerAddress.toLowerCase()}`);
+      return res.status(401).json({ error: 'Invalid signature: signer does not match proposer' });
+    }
+
+    const newProposal = new Proposal({
+      proposalId,
+      proposerAddress: proposerAddress.toLowerCase(),
+      description,
+      target,
+      value: value.toString(),
+      calldata,
+      signature
+    });
+
+    await newProposal.save();
+    return res.status(201).json({ success: true, proposalId });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'Proposal with this ID already exists' });
+    }
+    console.error('Error creating proposal:', error.message || error);
+    return res.status(500).json({ error: `Internal server error while creating proposal: ${error.message || 'Unknown error'}` });
+  }
+});
 
 // 1. POST /vote
 // Collect confidential votes
@@ -104,6 +203,103 @@ app.get('/results/:proposalId', async (req, res) => {
   } catch (error) {
     console.error('Error fetching results:', error);
     return res.status(500).json({ error: 'Internal server error while fetching results' });
+  }
+});
+
+// 2.5 GET /proposals
+// Return all proposals with their aggregated votes
+app.get('/proposals', async (req, res) => {
+  try {
+    const proposals = await Proposal.aggregate([
+      {
+        $lookup: {
+          from: 'votes',
+          localField: 'proposalId',
+          foreignField: 'proposalId',
+          as: 'votes'
+        }
+      },
+      {
+        $project: {
+          proposalId: 1,
+          proposerAddress: 1,
+          description: 1,
+          target: 1,
+          value: 1,
+          calldata: 1,
+          timestamp: 1,
+          status: 1,
+          votes: { choice: 1 }
+        }
+      },
+      {
+        $sort: { timestamp: -1 }
+      }
+    ]);
+
+    const formattedProposals = proposals.map(p => {
+      const tally = { '0': 0, '1': 0, '2': 0 };
+      if (p.votes) {
+        p.votes.forEach(v => {
+          if (tally[v.choice] !== undefined) {
+            tally[v.choice]++;
+          }
+        });
+      }
+      return {
+        proposalId: p.proposalId,
+        proposerAddress: p.proposerAddress,
+        description: p.description,
+        target: p.target,
+        value: p.value,
+        calldata: p.calldata,
+        timestamp: p.timestamp,
+        status: p.status || 'ACTIVE',
+        results: tally
+      };
+    });
+
+    return res.status(200).json(formattedProposals);
+  } catch (err) {
+    console.error('Error fetching proposals:', err);
+    return res.status(500).json({ error: 'Internal server error while fetching proposals' });
+  }
+});
+
+// POST /proposals/:proposalId/execute
+// Mark a proposal as executed off-chain
+app.post('/proposals/:proposalId/execute', async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const { executorAddress, governorAddress, transactionHash } = req.body || {};
+
+    console.log(`\n--- Proposal Execution Trace ---`);
+    console.log(`[on-chain] Relayer Wallet: ${executorAddress || 'Frontend Wallet'}`);
+    console.log(`[on-chain] Governor Address: ${governorAddress || 'Unknown'}`);
+    console.log(`[on-chain] Proposal ID: ${proposalId}`);
+    console.log(`[on-chain] Transaction Hash: ${transactionHash || 'Unknown'}`);
+
+    const proposal = await Proposal.findOneAndUpdate(
+      { proposalId },
+      { status: 'EXECUTED' },
+      { new: true }
+    );
+    
+    if (!proposal) {
+      console.log(`[database] MongoDB Update Status: FAILED (Proposal not found)`);
+      console.log(`--------------------------------\n`);
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+    
+    console.log(`[database] MongoDB Update Status: SUCCESS (Marked as EXECUTED)`);
+    console.log(`--------------------------------\n`);
+    
+    return res.status(200).json({ success: true, proposal });
+  } catch (error) {
+    console.error(`[database] MongoDB Update Status: FAILED (Error)`);
+    console.error('Error executing proposal:', error);
+    console.log(`--------------------------------\n`);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

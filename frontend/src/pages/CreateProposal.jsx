@@ -21,22 +21,49 @@ const CreateProposal = ({ provider, address }) => {
     try {
       setIsSubmitting(true);
       
-      // Real implementation would interact with Governor smart contract
-      // const signer = await provider.getSigner();
-      // const governor = new ethers.Contract(GOVERNOR_ADDRESS, GovernorABI, signer);
-      // const tx = await governor.propose([targetAddress], [value], [calldata], description);
-      // const receipt = await tx.wait();
+      if (!provider) throw new Error("Wallet provider not found");
+      const signer = await provider.getSigner();
       
-      console.log("Mock Proposal Created:", { description, targetAddress, value, calldata });
+      const message = JSON.stringify({
+        proposalDescription: description,
+        targetContract: targetAddress,
+        value: value.toString(),
+        calldata: calldata
+      });
       
-      // Simulate confirmation time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const signature = await signer.signMessage(message);
+      const proposalId = Date.now().toString();
+
+      const response = await fetch('http://localhost:5000/propose', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          proposalId,
+          proposerAddress: address,
+          description,
+          target: targetAddress,
+          value: value.toString(),
+          calldata,
+          signature
+        })
+      });
+
+      const data = await response.json();
       
-      // Redirect to cast vote (simulating the newly generated proposal ID being 123)
-      navigate('/cast-vote?proposalId=123');
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save proposal to backend');
+      }
+      
+      console.log("Proposal Created:", data);
+      alert("Proposal Submitted Successfully!");
+      
+      // Redirect to cast vote using the returned proposal ID
+      navigate(`/cast-vote?proposalId=${data.proposalId}`);
     } catch (error) {
       console.error("Error creating proposal:", error);
-      alert("Failed to create proposal");
+      alert(error.message || "Failed to create proposal");
     } finally {
       setIsSubmitting(false);
     }
